@@ -1,17 +1,24 @@
 package db
 
 import (
-	"database/sql"
 	"fmt"
 	"log"
+	"os"
+	"path"
 
-	_ "github.com/go-sql-driver/mysql"
+	"github.com/jinzhu/gorm"
+	_ "github.com/jinzhu/gorm/dialects/mysql"
 	"github.com/spf13/viper"
 )
 
-func Connect() (*sql.DB, error) {
-	connString := dbConnectionString()
-	db, err := sql.Open("mysql", connString)
+func Connect() (*gorm.DB, error) {
+	dialect, connString := dbConnectionString()
+
+	if dialect == "" {
+		dialect = "mysql"
+	}
+
+	db, err := gorm.Open(dialect, connString)
 	if err != nil {
 		log.Fatal(err)
 		return nil, err
@@ -19,27 +26,37 @@ func Connect() (*sql.DB, error) {
 
 	defer db.Close()
 
-	err = db.Ping()
-	if err != nil {
-		log.Fatal(err)
-		return nil, err
-	}
-
 	return db, nil
 }
 
-func dbConnectionString() string {
-	viper.SetConfigName("config")
-	viper.AddConfigPath("../configuration")
-	viper.SetConfigType("json")
-
-	err := viper.ReadInConfig()
+func dbConnectionString() (string, string) {
+	dir, err := os.Getwd()
+	dir = path.Join(dir, "configuration")
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	username, password, host, dbName := viper.GetString("database.db_username"), viper.GetString("database.db_password"), viper.GetString("database.db_host"), viper.GetString("database.db_database")
-	port := viper.GetInt("database.db_port")
+	viper.SetConfigName("config")
+	viper.AddConfigPath(dir)
+	viper.SetConfigType("json")
 
-	return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s", username, password, host, port, dbName)
+	err = viper.ReadInConfig()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	dialect := viper.GetString("database.dialect")
+
+	username, password, host, dbName := viper.GetString("database.db_username"), viper.GetString("database.db_password"), viper.GetString("database.db_host"), viper.GetString("database.db_database")
+	port := viper.GetString("database.db_port")
+	chartset := viper.GetString("database.charset")
+	if chartset == "" {
+		chartset = "utf8"
+	}
+
+	if port == "" {
+		return dialect, fmt.Sprintf("%s:%s@(%s)/%s?charset=%s&parseTime=True", username, password, host, dbName, chartset)
+	}
+
+	return dialect, fmt.Sprintf("%s:%s@(%s:%s)/%s?charset=%s&parseTime=True", username, password, host, port, dbName, chartset)
 }
